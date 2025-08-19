@@ -1,0 +1,17 @@
+{
+    "invest_usd_per_dlan_rule": { "dlan_per_usd_per_day": 120 },
+    "invest_fee_recipient": "F5rP2d1tGcy2zv5bv3qdfj11GZNiC9ZVxMBFy7aaetzS",
+
+    "tiers": [
+        {
+            "wallet": "F37yZcrqkne6EMM9hhTRgr7SWULk1MMPnbJ7mhrq4YFP",
+            "buttons": [ 9 ],
+            "fee_recipient": "F5rP2d1tGcy2zv5bv3qdfj11GZNiC9ZVxMBFy7aaetzS"
+        },
+        {
+            "wallet": "BVbsgwUhaHsmaRQdCuiZoZZhZDj5KCAdsPiGipBBDtq",
+            "buttons": [ 3 ],
+            "fee_recipient": "F5rP2d1tGcy2zv5bv3qdfj11GZNiC9ZVxMBFy7aaetzS"
+        }
+    ]
+}
