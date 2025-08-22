@@ -20,7 +20,6 @@ import idlJson from "../target/idl/dlan_stake.json";
 /* =================== Константы =================== */
 
 const IDL = idlJson as unknown as Idl;
-const PROGRAM_ID = new PublicKey("3hQsDEYknZmKKUBApAGtcGPy395ogJdiB8DCvMKh24K7");
 
 // MAINNET адреса
 const DLAN_MINT = new PublicKey("7yTrTBY1PZtknKAQTqzA3KriDc8y7yeMNa9nzTMseYa8"); // проверь реальный mint
@@ -128,6 +127,19 @@ export default function HomeUI() {
     () => perDay * investDaysWithdrawable,
     [perDay, investDaysWithdrawable]
   );
+
+  // Детали для обычного клейма (в стиле VIP)
+  const claimStats = useMemo(() => {
+    const unitsGrossPerDayLocal = Math.floor(perDayGross * 10 ** USDT_DECIMALS);
+    const maxDays = unitsGrossPerDayLocal > 0 ? Math.floor(reserveUnits / unitsGrossPerDayLocal) : 0;
+    const daysWithdrawable = Math.min(investDays, maxDays);
+    return {
+      perDayDisplay: perDay,
+      accrued: perDay * investDays,
+      withdrawable: perDay * daysWithdrawable,
+      daysWithdrawable,
+    };
+  }, [perDay, perDayGross, investDays, reserveUnits]);
 
   /* =================== vip.json =================== */
 
@@ -633,7 +645,7 @@ export default function HomeUI() {
         <KPI title="Ваша доля DLAN" value={dlanPct} />
       </div>
 
-      {/* Основная сетка — как на скрине: слева Stake, справа Claim */}
+      {/* Основная сетка — слева Stake, справа Claim (как на скрине) */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
         {/* Stake (SOL) */}
         <Card>
@@ -671,7 +683,10 @@ export default function HomeUI() {
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h2 style={{ margin: 0 }}>Claim profit</h2>
-            <button onClick={() => setShowClaimModal(true)} style={pillInfo as any}>APR ≈ {aprWithFee}</button>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button onClick={() => setShowClaimModal(true)} style={pillSmallLink}>Детали</button>
+              <span style={pillInfo}>APR ≈ {aprWithFee}</span>
+            </div>
           </div>
           <p style={{ color: "#666", marginTop: 12 }}>
             Накопление идёт посуточно. Клейм спишет все доступные дни сразу.
@@ -684,11 +699,11 @@ export default function HomeUI() {
         </Card>
       </div>
 
-      {/* VIP снизу — как на скрине: кнопки. Детали в модалке */}
+      {/* VIP снизу — кнопки; детали в модалке */}
       <Card style={{ marginTop: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h2 style={{ margin: 0 }}>☥</h2>
-          <button onClick={() => setShowVipModal(true)} style={pillSmallLink}>ℹ︎ Детали</button>
+          <button onClick={() => setShowVipModal(true)} style={pillSmallLink}>Детали</button>
         </div>
         {myVipButtons.length ? (
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
@@ -707,28 +722,35 @@ export default function HomeUI() {
 
       {/* =================== МОДАЛКИ =================== */}
 
-      {/* Claim details */}
+      {/* Claim details — как VIP */}
       {showClaimModal && (
-        <Modal onClose={() => setShowClaimModal(false)} title="Claim profit — детали">
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <MiniStat label="Ваш DLAN" value={fmtUnits(dlanUserUnits, dlanDecimals)} />
-            <MiniStat label="Дней накоплено" value={`${investDays}`} />
-            <MiniStat label="USDT/день" value={`${perDay.toFixed(6)} USDT`} />
-            <MiniStat label="Накоплено" value={`${investAccrued.toFixed(6)} USDT`} />
-            <MiniStat label="Доступно к выводу" value={`${investWithdrawable.toFixed(6)} USDT`} />
-            <MiniStat label="APR" value={`${aprWithFee}`} />
-          </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
-            <button style={btnClaim} onClick={() => { setShowClaimModal(false); handleInvestClaim(); }}>
-              Claim All
-            </button>
+        <Modal onClose={() => setShowClaimModal(false)} title="Claim — детали">
+          <div style={{ padding: 12, borderRadius: 16, background: "#fafbff", border: "1px solid #e7e8f1" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <MiniStat label="USDT/день" value={`${claimStats.perDayDisplay.toFixed(6)} USDT`} />
+              <MiniStat label="Накоплено" value={`${claimStats.accrued.toFixed(6)} USDT`} />
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <MiniStat label="Доступно к выводу" value={`${claimStats.withdrawable.toFixed(6)} USDT`} />
+              <div style={{ fontSize: 12, color: "#777", marginTop: 6 }}>
+                Дней накоплено: {investDays} | Дней доступно: {claimStats.daysWithdrawable}
+              </div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+              <button
+                style={btnClaim}
+                onClick={() => { setShowClaimModal(false); handleInvestClaim(); }}
+              >
+                Claim × all days
+              </button>
+            </div>
           </div>
         </Modal>
       )}
 
       {/* VIP details */}
       {showVipModal && (
-        <Modal onClose={() => setShowVipModal(false)} title="VIP — детали">
+        <Modal onClose={() => setShowVipModal(false)} title="детали">
           {myVipButtons.length ? (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               {myVipButtons.map((usd) => {
@@ -746,7 +768,7 @@ export default function HomeUI() {
                     </div>
                     <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
                       <button style={btnVip} onClick={() => { setShowVipModal(false); handleVipClaim(usd); }}>
-                        Claim × all days
+                        Claim
                       </button>
                     </div>
                   </div>
