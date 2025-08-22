@@ -61,7 +61,7 @@ export default function HomeUI() {
   const [stakeSol, setStakeSol] = useState<string>("1");
   const [usdcPreview, setUsdcPreview] = useState<number | null>(null);
 
-  // Stake USDT
+  // Stake USDT (в модалке)
   const [stakeUsdt, setStakeUsdt] = useState<string>("100");
 
   // ⏱ накопленные дни по таймерам
@@ -70,6 +70,11 @@ export default function HomeUI() {
 
   // 💰 резерв USDT (юниты = 1e6) — используем только в расчётах, не показываем
   const [reserveUnits, setReserveUnits] = useState<number>(0);
+
+  // модалки
+  const [showClaimModal, setShowClaimModal] = useState(false);
+  const [showVipModal, setShowVipModal] = useState(false);
+  const [showStakeModal, setShowStakeModal] = useState(false);
 
   /* =================== Утилиты/KPI =================== */
 
@@ -88,13 +93,13 @@ export default function HomeUI() {
 
   const denom = vip?.invest_usd_per_dlan_rule?.dlan_per_usd_per_day ?? 120;
 
-  // Текущий баланс пользователя → USDT/день (уже с учётом 1/3 комиссии, но без слова)
+  // Текущий баланс пользователя → USDT/день (уже с учётом 1/3 комиссии)
   const dlanHuman = useMemo(
     () => dlanUserUnits.toNumber() / 10 ** dlanDecimals,
     [dlanUserUnits, dlanDecimals]
   );
   const perDayGross = useMemo(() => (denom > 0 ? dlanHuman / denom : 0), [dlanHuman, denom]);
-  const perDay = useMemo(() => perDayGross * (2 / 3), [perDayGross]); // показываем как "USDT/день"
+  const perDay = useMemo(() => perDayGross * (2 / 3), [perDayGross]);
 
   // APR уже с учётом 1/3 комиссии
   const aprWithFee = useMemo(() => {
@@ -289,12 +294,7 @@ export default function HomeUI() {
     if (!provider || !program) return alert("Сначала подключитесь");
     try {
       const me = provider.wallet.publicKey!;
-
-      const [mintAuth] = PublicKey.findProgramAddressSync(
-        [Buffer.from("mint-auth")],
-        program.programId
-      );
-
+      const [mintAuth] = PublicKey.findProgramAddressSync([Buffer.from("mint-auth")], program.programId);
       const userDlanAta = await getAssociatedTokenAddress(DLAN_MINT, me);
 
       const solNum = Math.max(0, Number(stakeSol || "0"));
@@ -319,7 +319,7 @@ export default function HomeUI() {
           admin: ADMIN_SOL_WALLET,
           mint: DLAN_MINT,
           userToken: userDlanAta,
-          mintAuthority: [mintAuth][0],
+          mintAuthority: mintAuth,
           systemProgram: SystemProgram.programId,
           tokenProgram: TOKEN_PROGRAM_ID,
           associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -341,7 +341,7 @@ export default function HomeUI() {
     }
   }, [provider, program, stakeSol, dlanDecimals, fetchQuoteUsdcOut]);
 
-  /* =================== STAKE: USDT → DLAN (прямой) =================== */
+  /* =================== STAKE: USDT → DLAN (прямой, в модалке) =================== */
 
   const handleStakeUsdtMint = useCallback(async () => {
     if (!provider || !program) return alert("Сначала подключитесь");
@@ -369,26 +369,14 @@ export default function HomeUI() {
       // создать USDT-ATA, если её нет
       if (!userUsdtAtaInfo) {
         ixs.push(
-          createAssociatedTokenAccountInstruction(
-            me,           // payer
-            userUsdtAta,  // ata
-            me,           // owner
-            USDT_MINT
-          )
+          createAssociatedTokenAccountInstruction(me, userUsdtAta, me, USDT_MINT)
         );
       }
 
       // перевод USDT в хранилище
-      ixs.push(
-        createTransferInstruction(
-          userUsdtAta,
-          VAULT_USDT_ATA,
-          me,
-          usdtUnits
-        )
-      );
+      ixs.push(createTransferInstruction(userUsdtAta, VAULT_USDT_ATA, me, usdtUnits));
 
-      // инструкция программы: mint DLAN (lamports = 0)
+      // программа: mint DLAN (lamports = 0)
       const [mintAuth] = PublicKey.findProgramAddressSync([Buffer.from("mint-auth")], program.programId);
       const progIx = await (program.methods as any)
         .stakeAndMintPriced(new BN(0), new BN(mintUnits))
@@ -397,7 +385,7 @@ export default function HomeUI() {
           admin: ADMIN_SOL_WALLET,
           mint: DLAN_MINT,
           userToken: userDlanAta,
-          mintAuthority: [mintAuth][0],
+          mintAuthority: mintAuth,
           systemProgram: SystemProgram.programId,
           tokenProgram: TOKEN_PROGRAM_ID,
           associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -489,7 +477,7 @@ export default function HomeUI() {
     }
   }, [provider, program, vip, investDays, perDayGross, reloadTimersAndReserve]);
 
-  /* =================== VIP-claim: ВСЕ накопленные дни =================== */
+  /* =================== VIP =================== */
 
   const myVipButtons = useMemo(() => {
     if (!wallet || !vip) return [];
@@ -497,7 +485,6 @@ export default function HomeUI() {
     return tier ? tier.buttons : [];
   }, [wallet, vip]);
 
-  // хелпер для отображения по каждой VIP-кнопке
   const vipStats = useCallback(
     (usdPerDay: number) => {
       const perDayDisplay = usdPerDay * (2 / 3);
@@ -519,7 +506,6 @@ export default function HomeUI() {
       if (!provider || !program || !vip) return alert("Нет соединения");
       try {
         const me = provider.wallet.publicKey!;
-
         let days = Math.max(1, vipDays);
 
         const tier = vip.tiers.find((t) => t.wallet === wallet);
@@ -531,7 +517,6 @@ export default function HomeUI() {
 
         const unitsGrossPerDayLocal = Math.floor(usdPerDay * 10 ** USDT_DECIMALS);
 
-        // Резерв (внутренне)
         const reserveInfo = await provider.connection.getTokenAccountBalance(VAULT_USDT_ATA);
         let reserveUnitsLocal = Number(reserveInfo.value.amount);
         if (reserveUnitsLocal <= 0) return alert("В хранилище USDT нет средств");
@@ -648,51 +633,137 @@ export default function HomeUI() {
         <KPI title="Ваша доля DLAN" value={dlanPct} />
       </div>
 
-      {/* Основная симметричная сетка: слева оба стейка (вертикально), справа — клейм */}
+      {/* Основная сетка — как на скрине: слева Stake, справа Claim */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
-        {/* Левая колонка: два Stake-а подряд */}
-        <div style={{ display: "grid", gridAutoRows: "min-content", gap: 18 }}>
-          {/* Stake SOL */}
-          <Card>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h2 style={{ margin: 0 }}>Stake (SOL)</h2>
+        {/* Stake (SOL) */}
+        <Card>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h2 style={{ margin: 0 }}>Stake</h2>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <span style={{ ...pill, background: "#eef1ff", color: "#4a4a4a" }}>Курс: Jupiter</span>
+              <button onClick={() => setShowStakeModal(true)} style={pillSmallLink}>Другие способы</button>
             </div>
-            <p style={{ color: "#666", marginTop: 12 }}>
-              Внесите SOL, мы сконвертируем по Jupiter и начислим DLAN.
-            </p>
+          </div>
+          <p style={{ color: "#666", marginTop: 12 }}>
+            Внесите SOL, получите DLAN для получения ежедневных дивидендов.
+          </p>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "center" }}>
-              <input
-                type="number"
-                min="0"
-                step="0.000001"
-                value={stakeSol}
-                onChange={(e) => setStakeSol(e.target.value)}
-                placeholder="Сколько SOL"
-                style={input}
-              />
-              <button style={btnPrimary} onClick={handleStakeViaQuote}>
-                Stake & Mint
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "center" }}>
+            <input
+              type="number"
+              min="0"
+              step="0.000001"
+              value={stakeSol}
+              onChange={(e) => setStakeSol(e.target.value)}
+              placeholder="Сколько SOL"
+              style={input}
+            />
+            <button style={btnPrimary} onClick={handleStakeViaQuote}>
+              Stake & Mint
+            </button>
+          </div>
+          <div style={{ marginTop: 10, fontSize: 14, color: "#666" }}>
+            Оценочно получите: <b>~{usdcPreview ? usdcPreview.toFixed(6) : "0.000000"} DLAN</b>
+          </div>
+        </Card>
+
+        {/* Claim (кратко) */}
+        <Card>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h2 style={{ margin: 0 }}>Claim profit</h2>
+            <button onClick={() => setShowClaimModal(true)} style={pillInfo as any}>APR ≈ {aprWithFee}</button>
+          </div>
+          <p style={{ color: "#666", marginTop: 12 }}>
+            Накопление идёт посуточно. Клейм спишет все доступные дни сразу.
+          </p>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button style={btnClaim} onClick={handleInvestClaim}>
+              Claim All
+            </button>
+          </div>
+        </Card>
+      </div>
+
+      {/* VIP снизу — как на скрине: кнопки. Детали в модалке */}
+      <Card style={{ marginTop: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h2 style={{ margin: 0 }}>☥</h2>
+          <button onClick={() => setShowVipModal(true)} style={pillSmallLink}>ℹ︎ Детали</button>
+        </div>
+        {myVipButtons.length ? (
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
+            {myVipButtons.map((usd) => (
+              <button key={usd} style={btnVip} onClick={() => handleVipClaim(usd)}>
+                Claim {usd} USDT
               </button>
-            </div>
-            <div style={{ marginTop: 10, fontSize: 14, color: "#666" }}>
-              Оценочно получите: <b>~{usdcPreview ? usdcPreview.toFixed(6) : "0.000000"} DLAN</b>
-            </div>
-          </Card>
+            ))}
+          </div>
+        ) : (
+          <div style={{ marginTop: 8, color: "#666" }}>
+            Дополнительные привилегии на данный момент не доступны
+          </div>
+        )}
+      </Card>
 
-          {/* Stake USDT */}
-          <Card>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h2 style={{ margin: 0 }}>Stake (USDT)</h2>
-              <span style={{ ...pill, background: "#eefcff", color: "#0c6a7a", border: "1px solid #c7f0f7" }}>
-                1 USDT → ~1 DLAN
-              </span>
-            </div>
-            <p style={{ color: "#666", marginTop: 12 }}>
-              Переводим USDT в хранилище и начисляем DLAN напрямую.
-            </p>
+      {/* =================== МОДАЛКИ =================== */}
 
+      {/* Claim details */}
+      {showClaimModal && (
+        <Modal onClose={() => setShowClaimModal(false)} title="Claim profit — детали">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <MiniStat label="Ваш DLAN" value={fmtUnits(dlanUserUnits, dlanDecimals)} />
+            <MiniStat label="Дней накоплено" value={`${investDays}`} />
+            <MiniStat label="USDT/день" value={`${perDay.toFixed(6)} USDT`} />
+            <MiniStat label="Накоплено" value={`${investAccrued.toFixed(6)} USDT`} />
+            <MiniStat label="Доступно к выводу" value={`${investWithdrawable.toFixed(6)} USDT`} />
+            <MiniStat label="APR" value={`${aprWithFee}`} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+            <button style={btnClaim} onClick={() => { setShowClaimModal(false); handleInvestClaim(); }}>
+              Claim All
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* VIP details */}
+      {showVipModal && (
+        <Modal onClose={() => setShowVipModal(false)} title="VIP — детали">
+          {myVipButtons.length ? (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              {myVipButtons.map((usd) => {
+                const s = vipStats(usd);
+                return (
+                  <div key={usd} style={{ padding: 12, borderRadius: 16, background: "#fafbff", border: "1px solid #e7e8f1" }}>
+                    <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 8 }}>Пакет: {usd} USDT/день</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <MiniStat label="USDT/день" value={`${s.perDayDisplay.toFixed(2)} USDT`} />
+                      <MiniStat label="Накоплено" value={`${s.accrued.toFixed(2)} USDT`} />
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                      <MiniStat label="Доступно к выводу" value={`${s.withdrawable.toFixed(2)} USDT`} />
+                      <div style={{ fontSize: 12, color: "#777", marginTop: 6 }}>Дней накоплено: {vipDays} | Дней доступно: {s.daysWithdrawable}</div>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                      <button style={btnVip} onClick={() => { setShowVipModal(false); handleVipClaim(usd); }}>
+                        Claim × all days
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ color: "#666" }}>Нет доступных VIP-пакетов</div>
+          )}
+        </Modal>
+      )}
+
+      {/* Stake options (USDT) */}
+      {showStakeModal && (
+        <Modal onClose={() => setShowStakeModal(false)} title="Stake — другие способы">
+          <div style={{ padding: 12, borderRadius: 16, background: "#fafbff", border: "1px solid #e7e8f1" }}>
+            <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 8 }}>Stake (USDT)</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "center" }}>
               <input
                 type="number"
@@ -703,79 +774,14 @@ export default function HomeUI() {
                 placeholder="Сколько USDT"
                 style={input}
               />
-              <button style={btnPrimary} onClick={handleStakeUsdtMint}>
+              <button style={btnPrimary} onClick={() => { setShowStakeModal(false); handleStakeUsdtMint(); }}>
                 Stake & Mint
               </button>
             </div>
-          </Card>
-        </div>
-
-        {/* Правая колонка: Claim profit */}
-        <Card>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h2 style={{ margin: 0 }}>Claim profit</h2>
-            <span style={{ ...pillInfo }}>APR ≈ {aprWithFee}</span>
+            <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>1 USDT ≈ 1 DLAN</div>
           </div>
-          <p style={{ color: "#666", marginTop: 12 }}>
-            Накопление идёт посуточно. Клейм спишет все доступные дни сразу.
-          </p>
-
-          {/* Дневной доход и накопления */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 8 }}>
-            <MiniStat label="USDT/день" value={`${perDay.toFixed(6)} USDT`} />
-            <MiniStat label="Накоплено" value={`${investAccrued.toFixed(6)} USDT`} />
-          </div>
-
-          {/* Доступно к выводу (без показа резерва) */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12, marginTop: 8 }}>
-            <MiniStat label="Доступно к выводу" value={`${investWithdrawable.toFixed(6)} USDT`} />
-          </div>
-
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
-            <button style={btnClaim} onClick={handleInvestClaim}>
-              Claim All
-            </button>
-          </div>
-        </Card>
-      </div>
-
-      {/* Нижний ряд — VIP (все метрики на кнопках) */}
-      <Card style={{ marginTop: 18 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h2 style={{ margin: 0 }}>☥</h2>
-          <span style={{ ...pill, background: "#f8f5ff", border: "1px solid #e8ddff" }}>
-            Дней накоплено: {vipDays}
-          </span>
-        </div>
-        {myVipButtons.length ? (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
-            {myVipButtons.map((usd) => {
-              const s = vipStats(usd);
-              return (
-                <div key={usd} style={{ padding: 12, borderRadius: 16, background: "white", border: "1px solid #eef1ff" }}>
-                  <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 8 }}>Пакет: {usd} USDT/день</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <MiniStat label="USDT/день" value={`${s.perDayDisplay.toFixed(2)} USDT`} />
-                    <MiniStat label="Накоплено" value={`${s.accrued.toFixed(2)} USDT`} />
-                  </div>
-                  <div style={{ marginTop: 8 }}>
-                    <MiniStat label="Доступно к выводу" value={`${s.withdrawable.toFixed(2)} USDT`} />
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
-                    <button style={btnVip} onClick={() => handleVipClaim(usd)}>
-                      Claim 
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div style={{ marginTop: 8, color: "#666" }}>
-            Дополнительные привилегии на данный момент не доступны
-          </div>
-        )}
-      </Card>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -819,6 +825,24 @@ function MiniStat({ label, value }: { label: string; value: string }) {
     >
       <div style={{ fontSize: 12, color: "#74788d", fontWeight: 700 }}>{label}</div>
       <div style={{ fontSize: 18, fontWeight: 800, marginTop: 4 }}>{value}</div>
+    </div>
+  );
+}
+
+function Modal({
+  title,
+  children,
+  onClose,
+}: React.PropsWithChildren<{ title: string; onClose: () => void }>) {
+  return (
+    <div style={modalBackdrop} role="dialog" aria-modal="true">
+      <div style={modalCard}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div style={{ fontWeight: 900, fontSize: 18 }}>{title}</div>
+          <button onClick={onClose} style={modalCloseBtn}>×</button>
+        </div>
+        <div>{children}</div>
+      </div>
     </div>
   );
 }
@@ -896,6 +920,16 @@ const pillInfo: React.CSSProperties = {
   border: "1px solid #c7f0f7",
 };
 
+const pillSmallLink: React.CSSProperties = {
+  ...pill,
+  padding: "6px 10px",
+  fontSize: 12,
+  background: "#f3f5ff",
+  color: "#333",
+  border: "1px solid #e6e6f0",
+  cursor: "pointer",
+};
+
 const input: React.CSSProperties = {
   padding: "14px 16px",
   borderRadius: 16,
@@ -903,4 +937,36 @@ const input: React.CSSProperties = {
   background: "#fafbff",
   outline: "none",
   fontSize: 16,
+};
+
+/* modal styles */
+const modalBackdrop: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,0.22)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 16,
+  zIndex: 9999,
+};
+
+const modalCard: React.CSSProperties = {
+  width: "min(920px, 96vw)",
+  maxHeight: "80vh",
+  overflowY: "auto",
+  background: "white",
+  borderRadius: 20,
+  boxShadow: "0 24px 60px rgba(0,0,0,0.18)",
+  padding: 16,
+};
+
+const modalCloseBtn: React.CSSProperties = {
+  border: "none",
+  background: "#f3f5ff",
+  borderRadius: 999,
+  width: 32,
+  height: 32,
+  fontSize: 18,
+  cursor: "pointer",
 };
