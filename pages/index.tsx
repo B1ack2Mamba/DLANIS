@@ -560,7 +560,7 @@ export default function HomeUI() {
                     <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
                         {myVipButtons.map((usd) => (
                             <button key={usd} style={btnVip} onClick={() => handleVipClaim(usd)}>
-                                Claim {usd} USDT × all days
+                                Claim {usd} USDT
                             </button>
                         ))}
                     </div>
@@ -682,4 +682,5 @@ const input: React.CSSProperties = {
     outline: "none",
     fontSize: 16,
 };
+
 
