@@ -555,7 +555,7 @@ export default function HomeUI() {
 
             {/* VIP (все дни) */}
             <Card style={{ marginTop: 18 }}>
-                <h2 style={{ margin: 0 }}>☥ VIP</h2>
+                <h2 style={{ margin: 0 }}>☥</h2>
                 {myVipButtons.length ? (
                     <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
                         {myVipButtons.map((usd) => (
@@ -682,5 +682,6 @@ const input: React.CSSProperties = {
     outline: "none",
     fontSize: 16,
 };
+
 
 
