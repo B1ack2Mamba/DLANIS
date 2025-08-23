@@ -12,8 +12,6 @@ import {
   getMint,
   TOKEN_PROGRAM_ID,
   ASSOCIATED_TOKEN_PROGRAM_ID,
-  createTransferInstruction,
-  createAssociatedTokenAccountInstruction,
 } from "@solana/spl-token";
 import idlJson from "../target/idl/dlan_stake.json";
 
@@ -21,12 +19,13 @@ import idlJson from "../target/idl/dlan_stake.json";
 
 const IDL = idlJson as unknown as Idl;
 
-// MAINNET адреса
-const DLAN_MINT = new PublicKey("7yTrTBY1PZtknKAQTqzA3KriDc8y7yeMNa9nzTMseYa8"); // проверь реальный mint
-const USDT_MINT = new PublicKey("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"); // USDT mainnet
+// MAINNET адреса (проверь mint DLAN)
+const DLAN_MINT = new PublicKey("7yTrTBY1PZtknKAQTqzA3KriDc8y7yeMNa9nzTMseYa8");
+// !!! ВАЖНО: именно mainnet USDT
+const USDT_MINT = new PublicKey("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB");
 const ADMIN_SOL_WALLET = new PublicKey("Gxovarj3kNDd6ks54KNXknRh1GP5ETaUdYGr1xgqeVNh");
 
-// Vault (USDT) mainnet
+// Vault (USDT)
 const VAULT_AUTHORITY_PDA = new PublicKey("ByG2RboeJD4hTxZ8MGHMfmsdWbyvVFNh1jrPL27suoyc");
 const VAULT_USDT_ATA = new PublicKey("AMroGi8sbTG63nMr4VT1hyj18YA8jvoMN3GvVqovhBqa");
 
@@ -40,8 +39,8 @@ const SECS_PER_DAY = 86_400;
 /* =================== vip.json типы =================== */
 type VipTier = { wallet: string; buttons: number[]; fee_recipient?: string };
 type VipConfig = {
-  invest_usd_per_dlan_rule: { dlan_per_usd_per_day: number }; // по умолчанию 120
-  invest_fee_recipient: string; // базовый fee (если у tier не указан свой)
+  invest_usd_per_dlan_rule: { dlan_per_usd_per_day: number };
+  invest_fee_recipient: string;
   tiers: VipTier[];
 };
 
@@ -60,14 +59,14 @@ export default function HomeUI() {
   const [stakeSol, setStakeSol] = useState<string>("1");
   const [usdcPreview, setUsdcPreview] = useState<number | null>(null);
 
-  // Stake USDT (в модалке)
+  // сумма для свопа USDT → SOL
   const [stakeUsdt, setStakeUsdt] = useState<string>("100");
 
-  // ⏱ накопленные дни по таймерам
+  // ⏱ накопленные дни
   const [investDays, setInvestDays] = useState<number>(0);
   const [vipDays, setVipDays] = useState<number>(0);
 
-  // 💰 резерв USDT (юниты = 1e6) — используем только в расчётах, не показываем
+  // 💰 резерв USDT (юниты 1e6) — внутренняя метрика
   const [reserveUnits, setReserveUnits] = useState<number>(0);
 
   // модалки
@@ -92,7 +91,7 @@ export default function HomeUI() {
 
   const denom = vip?.invest_usd_per_dlan_rule?.dlan_per_usd_per_day ?? 120;
 
-  // Текущий баланс пользователя → USDT/день (уже с учётом 1/3 комиссии)
+  // USDT/день с учётом комиссии 1/3
   const dlanHuman = useMemo(
     () => dlanUserUnits.toNumber() / 10 ** dlanDecimals,
     [dlanUserUnits, dlanDecimals]
@@ -100,16 +99,13 @@ export default function HomeUI() {
   const perDayGross = useMemo(() => (denom > 0 ? dlanHuman / denom : 0), [dlanHuman, denom]);
   const perDay = useMemo(() => perDayGross * (2 / 3), [perDayGross]);
 
-  // APR уже с учётом 1/3 комиссии
+  // APR (с учётом 1/3 комиссии)
   const aprWithFee = useMemo(() => {
     const grossApr = (365 / (denom || 120)) * 100;
     return `${(grossApr * (2 / 3)).toFixed(2)}%`;
   }, [denom]);
 
-  // Invest-накопления
-  const investAccrued = useMemo(() => perDay * investDays, [perDay, investDays]);
-
-  // Сколько дней можно выплатить по резерву (внутренний расчёт)
+  // резерв → ограничение дней
   const unitsGrossPerDay = useMemo(
     () => Math.floor(perDayGross * 10 ** USDT_DECIMALS),
     [perDayGross]
@@ -123,15 +119,11 @@ export default function HomeUI() {
     () => Math.min(investDays, maxDaysByReserve),
     [investDays, maxDaysByReserve]
   );
-  const investWithdrawable = useMemo(
-    () => perDay * investDaysWithdrawable,
-    [perDay, investDaysWithdrawable]
-  );
 
-  // Детали для обычного клейма (в стиле VIP)
+  // Детали для обычного клейма
   const claimStats = useMemo(() => {
-    const unitsGrossPerDayLocal = Math.floor(perDayGross * 10 ** USDT_DECIMALS);
-    const maxDays = unitsGrossPerDayLocal > 0 ? Math.floor(reserveUnits / unitsGrossPerDayLocal) : 0;
+    const unitsPerDay = Math.floor(perDayGross * 10 ** USDT_DECIMALS);
+    const maxDays = unitsPerDay > 0 ? Math.floor(reserveUnits / unitsPerDay) : 0;
     const daysWithdrawable = Math.min(investDays, maxDays);
     return {
       perDayDisplay: perDay,
@@ -208,7 +200,7 @@ export default function HomeUI() {
     })();
   }, [provider]);
 
-  /* =================== Котировка Jupiter (SOL → USDC) =================== */
+  /* =================== Jupiter quote/swap =================== */
 
   const fetchQuoteUsdcOut = useCallback(async (lamports: number): Promise<number | null> => {
     try {
@@ -226,6 +218,56 @@ export default function HomeUI() {
     }
   }, []);
 
+  // Надёжный quote с подробной ошибкой
+  const fetchQuote = async (inputMint: string, outputMint: string, amountUnits: number | bigint) => {
+    const amountStr = (typeof amountUnits === "bigint" ? amountUnits : BigInt(Math.floor(amountUnits))).toString();
+
+    const url = new URL("https://quote-api.jup.ag/v6/quote");
+    url.searchParams.set("inputMint", inputMint);
+    url.searchParams.set("outputMint", outputMint);
+    url.searchParams.set("amount", amountStr);
+    url.searchParams.set("slippageBps", "50");
+    url.searchParams.set("swapMode", "ExactIn");
+    url.searchParams.set("onlyDirectRoutes", "false");
+
+    const r = await fetch(url.toString(), { headers: { accept: "application/json" }, cache: "no-store" });
+    const text = await r.text();
+    if (!r.ok) throw new Error(`Jupiter quote failed: ${r.status} ${text}`);
+    return JSON.parse(text);
+  };
+
+  // Построение и отправка swap-транзакции
+  const executeJupiterSwap = useCallback(
+    async (quoteResponse: any) => {
+      if (!provider?.wallet?.publicKey) throw new Error("Wallet not connected");
+      const swapRes = await fetch("https://quote-api.jup.ag/v6/swap", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          quoteResponse,
+          userPublicKey: provider.wallet.publicKey.toBase58(),
+          wrapUnwrapSOL: true,
+          asLegacyTransaction: false,
+        }),
+      });
+      const swapText = await swapRes.text();
+      if (!swapRes.ok) throw new Error(`Jupiter swap failed: ${swapRes.status} ${swapText}`);
+
+      const { swapTransaction } = JSON.parse(swapText);
+      const tx = Transaction.from(Buffer.from(swapTransaction, "base64"));
+      const signed = await (provider.wallet as any).signTransaction(tx);
+      const sig = await provider.connection.sendRawTransaction(signed.serialize(), {
+        skipPreflight: false,
+        maxRetries: 3,
+      });
+      const conf = await provider.connection.confirmTransaction(sig, "confirmed");
+      if (conf.value.err) throw new Error("Swap tx failed on chain");
+      return sig;
+    },
+    [provider]
+  );
+
+  // превью DLAN по Jupiter (SOL→USDC≈DLAN)
   useEffect(() => {
     (async () => {
       if (!provider || !program) return;
@@ -241,7 +283,7 @@ export default function HomeUI() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stakeSol, provider, program]);
 
-  /* =================== Ончейн-таймеры и резерв (резерв не показываем) =================== */
+  /* =================== Таймеры/резерв =================== */
 
   const reloadTimersAndReserve = useCallback(async () => {
     if (!provider || !program || !provider.wallet?.publicKey) return;
@@ -252,7 +294,7 @@ export default function HomeUI() {
     try {
       const [userState] = PublicKey.findProgramAddressSync(
         [Buffer.from("user"), me.toBuffer()],
-        program.programId
+        (program as any).programId
       );
       let last = 0;
       try {
@@ -270,7 +312,7 @@ export default function HomeUI() {
     try {
       const [vipState] = PublicKey.findProgramAddressSync(
         [Buffer.from("vip"), me.toBuffer()],
-        program.programId
+        (program as any).programId
       );
       let last = 0;
       try {
@@ -284,7 +326,7 @@ export default function HomeUI() {
       setVipDays(0);
     }
 
-    // Reserve USDT (внутренне)
+    // Reserve USDT
     try {
       const reserveInfo = await provider.connection.getTokenAccountBalance(VAULT_USDT_ATA);
       setReserveUnits(Number(reserveInfo.value.amount) || 0);
@@ -300,13 +342,13 @@ export default function HomeUI() {
     return () => clearInterval(t);
   }, [provider, program, reloadTimersAndReserve]);
 
-  /* =================== STAKE: SOL → DLAN (через котировку) =================== */
+  /* =================== Stake: SOL → DLAN =================== */
 
   const handleStakeViaQuote = useCallback(async () => {
     if (!provider || !program) return alert("Сначала подключитесь");
     try {
       const me = provider.wallet.publicKey!;
-      const [mintAuth] = PublicKey.findProgramAddressSync([Buffer.from("mint-auth")], program.programId);
+      const [mintAuth] = PublicKey.findProgramAddressSync([Buffer.from("mint-auth")], (program as any).programId);
       const userDlanAta = await getAssociatedTokenAddress(DLAN_MINT, me);
 
       const solNum = Math.max(0, Number(stakeSol || "0"));
@@ -353,74 +395,37 @@ export default function HomeUI() {
     }
   }, [provider, program, stakeSol, dlanDecimals, fetchQuoteUsdcOut]);
 
-  /* =================== STAKE: USDT → DLAN (прямой, в модалке) =================== */
+  /* =================== Swap: USDT → SOL =================== */
 
-  const handleStakeUsdtMint = useCallback(async () => {
-    if (!provider || !program) return alert("Сначала подключитесь");
+  const handleSwapUsdtToSol = useCallback(async () => {
+    if (!provider?.wallet?.publicKey) return alert("Сначала подключитесь");
+
     try {
-      const me = provider.wallet.publicKey!;
-      const usdtNum = Math.max(0, Number(stakeUsdt || "0"));
-      if (!usdtNum) return alert("Введите количество USDT");
-      const usdtUnits = Math.floor(usdtNum * 10 ** USDT_DECIMALS);
+      const units = BigInt(Math.floor(Math.max(0, Number(stakeUsdt || "0")) * 10 ** USDT_DECIMALS));
+      if (units <= 0n) return alert("Введите количество USDT");
 
-      // DLAN к минту (скейл по децималям)
-      let mintUnits: number;
-      if (dlanDecimals >= USDT_DECIMALS) {
-        mintUnits = usdtUnits * 10 ** (dlanDecimals - USDT_DECIMALS);
-      } else {
-        mintUnits = Math.floor(usdtUnits / 10 ** (USDT_DECIMALS - dlanDecimals));
+      const quote = await fetchQuote(USDT_MINT.toBase58(), WSOL, units);
+      if (!quote || !quote.routePlan || quote.routePlan.length === 0) {
+        throw new Error("Маршрут не найден (попробуйте другой объём или позже)");
       }
-      if (mintUnits <= 0) return alert("Слишком маленькая сумма");
 
-      const userUsdtAta = await getAssociatedTokenAddress(USDT_MINT, me);
-      const userDlanAta = await getAssociatedTokenAddress(DLAN_MINT, me);
-
-      const userUsdtAtaInfo = await provider.connection.getAccountInfo(userUsdtAta);
-      const ixs: any[] = [];
-
-      // создать USDT-ATA, если её нет
-      if (!userUsdtAtaInfo) {
-        ixs.push(
-          createAssociatedTokenAccountInstruction(me, userUsdtAta, me, USDT_MINT)
+      const sig = await executeJupiterSwap(quote);
+      alert(`Swap USDT→SOL отправлен.\nTx: ${sig}`);
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      // дружелюбная подсказка по devnet-минту
+      if (msg.includes("TOKEN_NOT_TRADABLE") || msg.includes("not tradable")) {
+        alert(
+          "Jupiter вернул TOKEN_NOT_TRADABLE.\n" +
+            "Чаще всего это происходит, когда используется devnet-адрес токена USDT или Phantom переключён не на mainnet.\n" +
+            "Убедись, что:\n• Phantom в сети Mainnet\n• В коде USDT_MINT = Es9vMFr... (mainnet)\n• Сделай hard-refresh страницы (Ctrl/Cmd+Shift+R)"
         );
+        return;
       }
-
-      // перевод USDT в хранилище
-      ixs.push(createTransferInstruction(userUsdtAta, VAULT_USDT_ATA, me, usdtUnits));
-
-      // программа: mint DLAN (lamports = 0)
-      const [mintAuth] = PublicKey.findProgramAddressSync([Buffer.from("mint-auth")], program.programId);
-      const progIx = await (program.methods as any)
-        .stakeAndMintPriced(new BN(0), new BN(mintUnits))
-        .accounts({
-          authority: me,
-          admin: ADMIN_SOL_WALLET,
-          mint: DLAN_MINT,
-          userToken: userDlanAta,
-          mintAuthority: mintAuth,
-          systemProgram: SystemProgram.programId,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-          rent: SYSVAR_RENT_PUBKEY,
-        })
-        .instruction();
-
-      ixs.push(progIx);
-
-      const tx = new Transaction().add(...ixs);
-      const sig = await provider.sendAndConfirm(tx, []);
-      console.log("stake USDT & mint sig:", sig);
-
-      const bal = await provider.connection.getTokenAccountBalance(userDlanAta);
-      setDlanUserUnits(new BN(bal.value.amount));
-
-      const dlanFloat = mintUnits / 10 ** dlanDecimals;
-      alert(`Зачислено ${stakeUsdt} USDT в хранилище и начислено ${dlanFloat.toFixed(6)} DLAN.`);
-    } catch (err: any) {
-      console.error(err);
-      alert("Ошибка Stake USDT:\n" + (err?.message || String(err)));
+      console.error(e);
+      alert("Ошибка swap USDT→SOL:\n" + msg);
     }
-  }, [provider, program, stakeUsdt, dlanDecimals]);
+  }, [provider, stakeUsdt]);
 
   /* =================== Invest-claim: ВСЕ накопленные дни =================== */
 
@@ -434,12 +439,10 @@ export default function HomeUI() {
 
       const unitsGrossPerDayLocal = Math.floor(perDayGross * 10 ** USDT_DECIMALS);
 
-      // Резерв (внутренне)
       const reserveInfo = await provider.connection.getTokenAccountBalance(VAULT_USDT_ATA);
       let reserveUnitsLocal = Number(reserveInfo.value.amount);
       if (reserveUnitsLocal <= 0) return alert("В хранилище USDT нет средств");
 
-      // Ограничим дни по резерву
       const totalGrossWanted = unitsGrossPerDayLocal * days;
       if (reserveUnitsLocal < totalGrossWanted) {
         const maxDaysByReserveLocal = Math.floor(reserveUnitsLocal / unitsGrossPerDayLocal);
@@ -457,7 +460,7 @@ export default function HomeUI() {
 
       const [userState] = PublicKey.findProgramAddressSync(
         [Buffer.from("user"), me.toBuffer()],
-        program.programId
+        (program as any).programId
       );
 
       const sig = await (program.methods as any)
@@ -549,7 +552,7 @@ export default function HomeUI() {
 
         const [vipState] = PublicKey.findProgramAddressSync(
           [Buffer.from("vip"), me.toBuffer()],
-          program.programId
+          (program as any).programId
         );
 
         const sig = await (program.methods as any)
@@ -645,16 +648,12 @@ export default function HomeUI() {
         <KPI title="Ваша доля DLAN" value={dlanPct} />
       </div>
 
-      {/* Основная сетка — слева Stake, справа Claim (как на скрине) */}
+      {/* Основная сетка — слева Stake, справа Claim */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
         {/* Stake (SOL) */}
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h2 style={{ margin: 0 }}>Stake</h2>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <span style={{ ...pill, background: "#eef1ff", color: "#4a4a4a" }}>Курс: Jupiter</span>
-              <button onClick={() => setShowStakeModal(true)} style={pillSmallLink}>Другие способы</button>
-            </div>
           </div>
           <p style={{ color: "#666", marginTop: 12 }}>
             Внесите SOL, получите DLAN для получения ежедневных дивидендов.
@@ -675,7 +674,10 @@ export default function HomeUI() {
             </button>
           </div>
           <div style={{ marginTop: 10, fontSize: 14, color: "#666" }}>
-            Оценочно получите: <b>~{usdcPreview ? usdcPreview.toFixed(6) : "0.000000"} DLAN</b>
+            Оценочно получите: <b>~{usdcPreview ? usdcPreview.toFixed(6) : "0.000000"} DLAN</b> по курсу Jupiter
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <button onClick={() => setShowStakeModal(true)} style={pillSmallLink}>Другие способы</button>
           </div>
         </Card>
 
@@ -684,7 +686,7 @@ export default function HomeUI() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h2 style={{ margin: 0 }}>Claim profit</h2>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <button onClick={() => setShowClaimModal(true)} style={pillSmallLink}>Детали</button>
+              <button onClick={() => setShowClaimModal(true)} style={pillSmallLink}>ℹ︎ Детали</button>
               <span style={pillInfo}>APR ≈ {aprWithFee}</span>
             </div>
           </div>
@@ -699,11 +701,11 @@ export default function HomeUI() {
         </Card>
       </div>
 
-      {/* VIP снизу — кнопки; детали в модалке */}
+      {/* VIP снизу */}
       <Card style={{ marginTop: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h2 style={{ margin: 0 }}>☥</h2>
-          <button onClick={() => setShowVipModal(true)} style={pillSmallLink}>Детали</button>
+          <button onClick={() => setShowVipModal(true)} style={pillSmallLink}>ℹ︎ Детали</button>
         </div>
         {myVipButtons.length ? (
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
@@ -722,41 +724,43 @@ export default function HomeUI() {
 
       {/* =================== МОДАЛКИ =================== */}
 
-      {/* Claim details — как VIP */}
+      {/* Claim details — узкая колонка слева */}
       {showClaimModal && (
         <Modal onClose={() => setShowClaimModal(false)} title="Claim — детали">
-          <div style={{ padding: 12, borderRadius: 16, background: "#fafbff", border: "1px solid #e7e8f1" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <MiniStat label="USDT/день" value={`${claimStats.perDayDisplay.toFixed(6)} USDT`} />
-              <MiniStat label="Накоплено" value={`${claimStats.accrued.toFixed(6)} USDT`} />
-            </div>
-            <div style={{ marginTop: 8 }}>
-              <MiniStat label="Доступно к выводу" value={`${claimStats.withdrawable.toFixed(6)} USDT`} />
-              <div style={{ fontSize: 12, color: "#777", marginTop: 6 }}>
-                Дней накоплено: {investDays} | Дней доступно: {claimStats.daysWithdrawable}
+          <div style={{ maxWidth: 420 }}>
+            <div style={{ padding: 12, borderRadius: 16, background: "#fafbff", border: "1px solid #e7e8f1" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <MiniStat label="USDT/день" value={`${claimStats.perDayDisplay.toFixed(6)} USDT`} />
+                <MiniStat label="Накоплено" value={`${claimStats.accrued.toFixed(6)} USDT`} />
               </div>
-            </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
-              <button
-                style={btnClaim}
-                onClick={() => { setShowClaimModal(false); handleInvestClaim(); }}
-              >
-                Claim × all days
-              </button>
+              <div style={{ marginTop: 8 }}>
+                <MiniStat label="Доступно к выводу" value={`${claimStats.withdrawable.toFixed(6)} USDT`} />
+                <div style={{ fontSize: 12, color: "#777", marginTop: 6 }}>
+                  Дней накоплено: {investDays} | Дней доступно: {claimStats.daysWithdrawable}
+                </div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                <button
+                  style={btnClaim}
+                  onClick={() => { setShowClaimModal(false); handleInvestClaim(); }}
+                >
+                  Claim × all days
+                </button>
+              </div>
             </div>
           </div>
         </Modal>
       )}
 
-      {/* VIP details */}
+      {/* VIP details — тоже узкая */}
       {showVipModal && (
         <Modal onClose={() => setShowVipModal(false)} title="детали">
           {myVipButtons.length ? (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div style={{ maxWidth: 420 }}>
               {myVipButtons.map((usd) => {
                 const s = vipStats(usd);
                 return (
-                  <div key={usd} style={{ padding: 12, borderRadius: 16, background: "#fafbff", border: "1px solid #e7e8f1" }}>
+                  <div key={usd} style={{ padding: 12, borderRadius: 16, background: "#fafbff", border: "1px solid #e7e8f1", marginBottom: 14 }}>
                     <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 8 }}>Пакет: {usd} USDT/день</div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                       <MiniStat label="USDT/день" value={`${s.perDayDisplay.toFixed(2)} USDT`} />
@@ -764,7 +768,9 @@ export default function HomeUI() {
                     </div>
                     <div style={{ marginTop: 8 }}>
                       <MiniStat label="Доступно к выводу" value={`${s.withdrawable.toFixed(2)} USDT`} />
-                      <div style={{ fontSize: 12, color: "#777", marginTop: 6 }}>Дней накоплено: {vipDays} | Дней доступно: {s.daysWithdrawable}</div>
+                      <div style={{ fontSize: 12, color: "#777", marginTop: 6 }}>
+                        Дней накоплено: {vipDays} | Дней доступно: {s.daysWithdrawable}
+                      </div>
                     </div>
                     <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
                       <button style={btnVip} onClick={() => { setShowVipModal(false); handleVipClaim(usd); }}>
@@ -781,26 +787,30 @@ export default function HomeUI() {
         </Modal>
       )}
 
-      {/* Stake options (USDT) */}
+      {/* Stake options: только SWAP USDT→SOL */}
       {showStakeModal && (
         <Modal onClose={() => setShowStakeModal(false)} title="Stake — другие способы">
-          <div style={{ padding: 12, borderRadius: 16, background: "#fafbff", border: "1px solid #e7e8f1" }}>
-            <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 8 }}>Stake (USDT)</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "center" }}>
-              <input
-                type="number"
-                min="0"
-                step="0.000001"
-                value={stakeUsdt}
-                onChange={(e) => setStakeUsdt(e.target.value)}
-                placeholder="Сколько USDT"
-                style={input}
-              />
-              <button style={btnPrimary} onClick={() => { setShowStakeModal(false); handleStakeUsdtMint(); }}>
-                Stake & Mint
-              </button>
+          <div style={{ maxWidth: 560 }}>
+            <div style={{ padding: 12, borderRadius: 16, background: "#fafbff", border: "1px solid #e7e8f1" }}>
+              <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 8 }}>Swap USDT → SOL (через Jupiter)</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "center" }}>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.000001"
+                  value={stakeUsdt}
+                  onChange={(e) => setStakeUsdt(e.target.value)}
+                  placeholder="Сколько USDT"
+                  style={input}
+                />
+                <button style={btnPrimary} onClick={() => { setShowStakeModal(false); handleSwapUsdtToSol(); }}>
+                  Swap to SOL
+                </button>
+              </div>
+              <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
+                Средства придут в виде SOL прямо на ваш кошелёк (wrap/unwrap SOL выполняется автоматически).
+              </div>
             </div>
-            <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>1 USDT ≈ 1 DLAN</div>
           </div>
         </Modal>
       )}
