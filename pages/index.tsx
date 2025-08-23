@@ -680,14 +680,12 @@ export default function HomeUI() {
           <p style={{ color: "#666", marginTop: 12 }}>
             Вывод накопленной прибыли за все дни сразу.
           </p>
-          {/* низ карточки: Claim справа, «Детали» под ним */}
-<div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
-  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-    <button style={btnClaim} onClick={handleInvestClaim}>Claim All</button>
-    <button onClick={() => setShowClaimModal(true)} style={pillSmallLink}>Детали</button>
-  </div>
-</div>
-
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <button onClick={() => setShowClaimModal(true)} style={pillSmallLink}>Детали</button>
+            <button style={btnClaim} onClick={handleInvestClaim}>Claim All</button>
+          </div>
+        </Card>
+      </div>
 
       {/* VIP снизу */}
       <Card style={{ marginTop: 18 }}>
@@ -990,6 +988,4 @@ const modalCloseBtn: React.CSSProperties = {
   fontSize: 18,
   cursor: "pointer",
 };
-
-
 
