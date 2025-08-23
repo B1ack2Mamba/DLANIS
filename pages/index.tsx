@@ -5,7 +5,7 @@ import {
   PublicKey,
   SystemProgram,
   SYSVAR_RENT_PUBKEY,
-  Transaction,
+  VersionedTransaction, // <-- используем версионированные транзакции
 } from "@solana/web3.js";
 import {
   getAssociatedTokenAddress,
@@ -21,7 +21,7 @@ const IDL = idlJson as unknown as Idl;
 
 // MAINNET адреса (проверь mint DLAN)
 const DLAN_MINT = new PublicKey("7yTrTBY1PZtknKAQTqzA3KriDc8y7yeMNa9nzTMseYa8");
-// !!! ВАЖНО: именно mainnet USDT
+// mainnet USDT
 const USDT_MINT = new PublicKey("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB");
 const ADMIN_SOL_WALLET = new PublicKey("Gxovarj3kNDd6ks54KNXknRh1GP5ETaUdYGr1xgqeVNh");
 
@@ -66,7 +66,7 @@ export default function HomeUI() {
   const [investDays, setInvestDays] = useState<number>(0);
   const [vipDays, setVipDays] = useState<number>(0);
 
-  // 💰 резерв USDT (юниты 1e6) — внутренняя метрика
+  // 💰 резерв USDT (юниты 1e6)
   const [reserveUnits, setReserveUnits] = useState<number>(0);
 
   // модалки
@@ -110,20 +110,9 @@ export default function HomeUI() {
     () => Math.floor(perDayGross * 10 ** USDT_DECIMALS),
     [perDayGross]
   );
-  const maxDaysByReserve = useMemo(() => {
-    if (unitsGrossPerDay <= 0) return 0;
-    return Math.floor(reserveUnits / unitsGrossPerDay);
-  }, [reserveUnits, unitsGrossPerDay]);
 
-  const investDaysWithdrawable = useMemo(
-    () => Math.min(investDays, maxDaysByReserve),
-    [investDays, maxDaysByReserve]
-  );
-
-  // Детали для обычного клейма
   const claimStats = useMemo(() => {
-    const unitsPerDay = Math.floor(perDayGross * 10 ** USDT_DECIMALS);
-    const maxDays = unitsPerDay > 0 ? Math.floor(reserveUnits / unitsPerDay) : 0;
+    const maxDays = unitsGrossPerDay > 0 ? Math.floor(reserveUnits / unitsGrossPerDay) : 0;
     const daysWithdrawable = Math.min(investDays, maxDays);
     return {
       perDayDisplay: perDay,
@@ -131,7 +120,7 @@ export default function HomeUI() {
       withdrawable: perDay * daysWithdrawable,
       daysWithdrawable,
     };
-  }, [perDay, perDayGross, investDays, reserveUnits]);
+  }, [perDay, investDays, unitsGrossPerDay, reserveUnits]);
 
   /* =================== vip.json =================== */
 
@@ -236,7 +225,7 @@ export default function HomeUI() {
     return JSON.parse(text);
   };
 
-  // Построение и отправка swap-транзакции
+  // Построение и отправка swap-транзакции (V0)
   const executeJupiterSwap = useCallback(
     async (quoteResponse: any) => {
       if (!provider?.wallet?.publicKey) throw new Error("Wallet not connected");
@@ -247,15 +236,18 @@ export default function HomeUI() {
           quoteResponse,
           userPublicKey: provider.wallet.publicKey.toBase58(),
           wrapUnwrapSOL: true,
-          asLegacyTransaction: false,
+          asLegacyTransaction: false, // версионированная tx
         }),
       });
       const swapText = await swapRes.text();
       if (!swapRes.ok) throw new Error(`Jupiter swap failed: ${swapRes.status} ${swapText}`);
 
       const { swapTransaction } = JSON.parse(swapText);
-      const tx = Transaction.from(Buffer.from(swapTransaction, "base64"));
-      const signed = await (provider.wallet as any).signTransaction(tx);
+      const raw = Buffer.from(swapTransaction, "base64");
+      const vtx = VersionedTransaction.deserialize(raw);
+
+      // Phantom умеет подписывать VersionedTransaction
+      const signed = await (provider.wallet as any).signTransaction(vtx);
       const sig = await provider.connection.sendRawTransaction(signed.serialize(), {
         skipPreflight: false,
         maxRetries: 3,
@@ -413,12 +405,10 @@ export default function HomeUI() {
       alert(`Swap USDT→SOL отправлен.\nTx: ${sig}`);
     } catch (e: any) {
       const msg = String(e?.message || e);
-      // дружелюбная подсказка по devnet-минту
       if (msg.includes("TOKEN_NOT_TRADABLE") || msg.includes("not tradable")) {
         alert(
           "Jupiter вернул TOKEN_NOT_TRADABLE.\n" +
-            "Чаще всего это происходит, когда используется devnet-адрес токена USDT или Phantom переключён не на mainnet.\n" +
-            "Убедись, что:\n• Phantom в сети Mainnet\n• В коде USDT_MINT = Es9vMFr... (mainnet)\n• Сделай hard-refresh страницы (Ctrl/Cmd+Shift+R)"
+            "Проверь сеть Phantom (Mainnet) и что USDT mint — Es9vMFr... (mainnet). Затем сделай hard-refresh (Ctrl/Cmd+Shift+R)."
         );
         return;
       }
@@ -681,32 +671,25 @@ export default function HomeUI() {
           </div>
         </Card>
 
-        {/* Claim (кратко) */}
+        {/* Claim */}
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h2 style={{ margin: 0 }}>Claim profit</h2>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <button onClick={() => setShowClaimModal(true)} style={pillSmallLink}>ℹ︎ Детали</button>
-              <span style={pillInfo}>APR ≈ {aprWithFee}</span>
-            </div>
+            <span style={pillInfo}>APR ≈ {aprWithFee}</span>
           </div>
           <p style={{ color: "#666", marginTop: 12 }}>
             Накопление идёт посуточно. Клейм спишет все доступные дни сразу.
           </p>
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <button style={btnClaim} onClick={handleInvestClaim}>
-              Claim All
-            </button>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <button onClick={() => setShowClaimModal(true)} style={pillSmallLink}>Детали</button>
+            <button style={btnClaim} onClick={handleInvestClaim}>Claim All</button>
           </div>
         </Card>
       </div>
 
       {/* VIP снизу */}
       <Card style={{ marginTop: 18 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h2 style={{ margin: 0 }}>☥</h2>
-          <button onClick={() => setShowVipModal(true)} style={pillSmallLink}>ℹ︎ Детали</button>
-        </div>
+        <h2 style={{ margin: 0 }}>☥</h2>
         {myVipButtons.length ? (
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
             {myVipButtons.map((usd) => (
@@ -720,13 +703,16 @@ export default function HomeUI() {
             Дополнительные привилегии на данный момент не доступны
           </div>
         )}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+          <button onClick={() => setShowVipModal(true)} style={pillSmallLink}>Детали</button>
+        </div>
       </Card>
 
       {/* =================== МОДАЛКИ =================== */}
 
       {/* Claim details — узкая колонка слева */}
       {showClaimModal && (
-        <Modal onClose={() => setShowClaimModal(false)} title="Claim — детали">
+        <Modal onClose={() => setShowClaimModal(false)} title="Детали">
           <div style={{ maxWidth: 420 }}>
             <div style={{ padding: 12, borderRadius: 16, background: "#fafbff", border: "1px solid #e7e8f1" }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -754,7 +740,7 @@ export default function HomeUI() {
 
       {/* VIP details — тоже узкая */}
       {showVipModal && (
-        <Modal onClose={() => setShowVipModal(false)} title="детали">
+        <Modal onClose={() => setShowVipModal(false)} title="Детали">
           {myVipButtons.length ? (
             <div style={{ maxWidth: 420 }}>
               {myVipButtons.map((usd) => {
