@@ -664,10 +664,10 @@ export default function HomeUI() {
             </button>
           </div>
           <div style={{ marginTop: 10, fontSize: 14, color: "#666" }}>
-            Оценочно получите: <b>~{usdcPreview ? usdcPreview.toFixed(6) : "0.000000"} DLAN</b> по курсу Jupiter
+            Оценочно получите: <b>~{usdcPreview ? usdcPreview.toFixed(6) : "0.000000"} DLAN</b> по курсу Solana в Jupiter
           </div>
           <div style={{ marginTop: 10 }}>
-            <button onClick={() => setShowStakeModal(true)} style={pillSmallLink}>Другие способы</button>
+            <button onClick={() => setShowStakeModal(true)} style={pillSmallLink}>USDT-SOL Swap</button>
           </div>
         </Card>
 
@@ -678,7 +678,7 @@ export default function HomeUI() {
             <span style={pillInfo}>APR ≈ {aprWithFee}</span>
           </div>
           <p style={{ color: "#666", marginTop: 12 }}>
-            Накопление идёт посуточно. Вывод накопленной прибыли за все дни сразу.
+            Вывод накопленной прибыли за все дни сразу.
           </p>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <button onClick={() => setShowClaimModal(true)} style={pillSmallLink}>Детали</button>
@@ -703,7 +703,7 @@ export default function HomeUI() {
             Дополнительные привилегии на данный момент не доступны
           </div>
         )}
-        <div style={{ display: "flex", justifyContent: "flex-start", marginTop: 12 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
           <button onClick={() => setShowVipModal(true)} style={pillSmallLink}>Детали</button>
         </div>
       </Card>
@@ -988,4 +988,5 @@ const modalCloseBtn: React.CSSProperties = {
   fontSize: 18,
   cursor: "pointer",
 };
+
 
