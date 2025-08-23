@@ -678,7 +678,7 @@ export default function HomeUI() {
             <span style={pillInfo}>APR ≈ {aprWithFee}</span>
           </div>
           <p style={{ color: "#666", marginTop: 12 }}>
-            Накопление идёт посуточно. Клейм спишет все доступные дни сразу.
+            Накопление идёт посуточно. Вывод накопленной прибыли за все дни сразу.
           </p>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <button onClick={() => setShowClaimModal(true)} style={pillSmallLink}>Детали</button>
@@ -703,7 +703,7 @@ export default function HomeUI() {
             Дополнительные привилегии на данный момент не доступны
           </div>
         )}
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+        <div style={{ display: "flex", justifyContent: "flex-start", marginTop: 12 }}>
           <button onClick={() => setShowVipModal(true)} style={pillSmallLink}>Детали</button>
         </div>
       </Card>
@@ -730,7 +730,7 @@ export default function HomeUI() {
                   style={btnClaim}
                   onClick={() => { setShowClaimModal(false); handleInvestClaim(); }}
                 >
-                  Claim × all days
+                  Claim
                 </button>
               </div>
             </div>
@@ -768,14 +768,14 @@ export default function HomeUI() {
               })}
             </div>
           ) : (
-            <div style={{ color: "#666" }}>Нет доступных VIP-пакетов</div>
+            <div style={{ color: "#666" }}>Нет доступных возможностей</div>
           )}
         </Modal>
       )}
 
       {/* Stake options: только SWAP USDT→SOL */}
       {showStakeModal && (
-        <Modal onClose={() => setShowStakeModal(false)} title="Stake — другие способы">
+        <Modal onClose={() => setShowStakeModal(false)} title="USDT-SOL Swap">
           <div style={{ maxWidth: 560 }}>
             <div style={{ padding: 12, borderRadius: 16, background: "#fafbff", border: "1px solid #e7e8f1" }}>
               <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 8 }}>Swap USDT → SOL (через Jupiter)</div>
@@ -988,3 +988,4 @@ const modalCloseBtn: React.CSSProperties = {
   fontSize: 18,
   cursor: "pointer",
 };
+
