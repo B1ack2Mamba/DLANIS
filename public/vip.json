@@ -4,7 +4,7 @@
 
     "tiers": [
         {
-            "wallet": "5fdbpy4sLn5D4uLpLDrjthTtGsWBRoR2SA4m65ZeyDof",
+            "wallet": "F37yZcrqkne6EMM9hhTRgr7SWULk1MMPnbJ7mhrq4YFP",
             "buttons": [ 3 ],
             "fee_recipient": "F5rP2d1tGcy2zv5bv3qdfj11GZNiC9ZVxMBFy7aaetzS"
         },
@@ -15,6 +15,7 @@
         }
     ]
 }
+
 
 
 
