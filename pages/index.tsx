@@ -153,7 +153,7 @@ export default function HomeUI() {
     setWallet(res.publicKey.toBase58());
 
     const conn = new Connection(
-      "https://frequent-thrumming-tent.solana-mainnet.quiknode.pro/50b053e4695fe25371395a9c52174462b48fb9a4/",
+      "https://lb.drpc.live/solana/AqUGUz8ODUJ3r-2BHSjcsn_P78zYt9wR8L7o_hXb38UN",
       "processed"
     );
     const anchorWallet = {
@@ -988,4 +988,5 @@ const modalCloseBtn: React.CSSProperties = {
   fontSize: 18,
   cursor: "pointer",
 };
+
 
