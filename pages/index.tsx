@@ -193,7 +193,7 @@ export default function HomeUI() {
 
   const fetchQuoteUsdcOut = useCallback(async (lamports: number): Promise<number | null> => {
     try {
-      const url = new URL("https://lite-api.jup.ag/swap/v1/quote);
+      const url = new URL("https://lite-api.jup.ag/swap/v1/quote");
       url.searchParams.set("inputMint", WSOL);
       url.searchParams.set("outputMint", USDC);
       url.searchParams.set("amount", String(lamports));
@@ -988,6 +988,7 @@ const modalCloseBtn: React.CSSProperties = {
   fontSize: 18,
   cursor: "pointer",
 };
+
 
 
 
