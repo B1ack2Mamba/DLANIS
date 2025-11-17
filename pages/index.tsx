@@ -231,7 +231,7 @@ export default function HomeUI() {
       if (!provider?.wallet?.publicKey) throw new Error("Wallet not connected");
       const swapRes = await fetch("https://public.jupiterapi.com/swap/v1/swap", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+         headers: { "content-type": "application/json", "accept": "application/json" },
         body: JSON.stringify({
           quoteResponse,
           userPublicKey: provider.wallet.publicKey.toBase58(),
@@ -988,4 +988,5 @@ const modalCloseBtn: React.CSSProperties = {
   fontSize: 18,
   cursor: "pointer",
 };
+
 
