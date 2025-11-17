@@ -211,7 +211,7 @@ export default function HomeUI() {
   const fetchQuote = async (inputMint: string, outputMint: string, amountUnits: number | bigint) => {
     const amountStr = (typeof amountUnits === "bigint" ? amountUnits : BigInt(Math.floor(amountUnits))).toString();
 
-    const url = new URL("https://public.jupiterapi.com/swap/v1/quote"");
+    const url = new URL("https://public.jupiterapi.com/swap/v1/quote");
     url.searchParams.set("inputMint", inputMint);
     url.searchParams.set("outputMint", outputMint);
     url.searchParams.set("amount", amountStr);
@@ -229,9 +229,9 @@ export default function HomeUI() {
   const executeJupiterSwap = useCallback(
     async (quoteResponse: any) => {
       if (!provider?.wallet?.publicKey) throw new Error("Wallet not connected");
-     const swapRes = await fetch("https://public.jupiterapi.com/swap/v1/swap", {
+      const swapRes = await fetch("https://public.jupiterapi.com/swap/v1/swap", {
         method: "POST",
-       headers: { "content-type": "application/json", "accept": "application/json" },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({
           quoteResponse,
           userPublicKey: provider.wallet.publicKey.toBase58(),
@@ -988,9 +988,4 @@ const modalCloseBtn: React.CSSProperties = {
   fontSize: 18,
   cursor: "pointer",
 };
-
-
-
-
-
 
