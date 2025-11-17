@@ -193,7 +193,7 @@ export default function HomeUI() {
 
   const fetchQuoteUsdcOut = useCallback(async (lamports: number): Promise<number | null> => {
     try {
-      const url = new URL("https://quote-api.jup.ag/v6/quote");
+      const url = new URL("https://lite-api.jup.ag");
       url.searchParams.set("inputMint", WSOL);
       url.searchParams.set("outputMint", USDC);
       url.searchParams.set("amount", String(lamports));
@@ -211,7 +211,7 @@ export default function HomeUI() {
   const fetchQuote = async (inputMint: string, outputMint: string, amountUnits: number | bigint) => {
     const amountStr = (typeof amountUnits === "bigint" ? amountUnits : BigInt(Math.floor(amountUnits))).toString();
 
-    const url = new URL("https://quote-api.jup.ag/v6/quote");
+    const url = new URL("https://lite-api.jup.ag");
     url.searchParams.set("inputMint", inputMint);
     url.searchParams.set("outputMint", outputMint);
     url.searchParams.set("amount", amountStr);
@@ -229,7 +229,7 @@ export default function HomeUI() {
   const executeJupiterSwap = useCallback(
     async (quoteResponse: any) => {
       if (!provider?.wallet?.publicKey) throw new Error("Wallet not connected");
-      const swapRes = await fetch("https://quote-api.jup.ag/v6/swap", {
+      const swapRes = await fetch("https://lite-api.jup.ag", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -988,5 +988,6 @@ const modalCloseBtn: React.CSSProperties = {
   fontSize: 18,
   cursor: "pointer",
 };
+
 
 
